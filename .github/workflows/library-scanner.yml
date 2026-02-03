@@ -1,0 +1,148 @@
+name: Library Scanner
+
+on:
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches: [ main, master ]  # Or remove this if you only want manual
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly on Monday (optional)
+
+jobs:
+  scan-dependencies:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft version
+      
+      - name: Scan dependencies
+        run: |
+          syft . -o json > sbom-raw.json
+      
+      - name: Setup Node.js for processing
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Process results into readable format
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          
+          const sbom = JSON.parse(fs.readFileSync('sbom-raw.json', 'utf8'));
+          
+          const libraries = sbom.artifacts.map(artifact => ({
+            name: artifact.name,
+            version: artifact.version,
+            type: artifact.type,
+            language: artifact.language || artifact.metadata?.language || 'unknown',
+            filePath: artifact.locations?.[0]?.path || 'unknown',
+            purl: artifact.purl
+          }));
+          
+          // Sort by file path then name
+          libraries.sort((a, b) => {
+            if (a.filePath !== b.filePath) {
+              return a.filePath.localeCompare(b.filePath);
+            }
+            return a.name.localeCompare(b.name);
+          });
+          
+          // Save as JSON
+          fs.writeFileSync('libraries.json', JSON.stringify(libraries, null, 2));
+          
+          // Create a readable markdown report
+          let markdown = '# Dependency Report\n\n';
+          markdown += `**Total libraries found:** ${libraries.length}\n\n`;
+          markdown += `**Scan date:** ${new Date().toISOString()}\n\n`;
+          markdown += '---\n\n';
+          
+          // Group by file path
+          const byFile = {};
+          libraries.forEach(lib => {
+            if (!byFile[lib.filePath]) {
+              byFile[lib.filePath] = [];
+            }
+            byFile[lib.filePath].push(lib);
+          });
+          
+          Object.keys(byFile).sort().forEach(filePath => {
+            markdown += `## 📄 ${filePath}\n\n`;
+            markdown += '| Library | Version | Language/Type |\n';
+            markdown += '|---------|---------|---------------|\n';
+            byFile[filePath].forEach(lib => {
+              markdown += `| ${lib.name} | ${lib.version} | ${lib.language || lib.type} |\n`;
+            });
+            markdown += '\n';
+          });
+          
+          fs.writeFileSync('libraries.md', markdown);
+          
+          // Create CSV
+          const csv = [
+            'Name,Version,Language,Type,File Path,PURL',
+            ...libraries.map(lib => 
+              `"${lib.name}","${lib.version}","${lib.language}","${lib.type}","${lib.filePath}","${lib.purl || ''}"`
+            )
+          ].join('\n');
+          
+          fs.writeFileSync('libraries.csv', csv);
+          
+          console.log(`✅ Found ${libraries.length} libraries`);
+          console.log(`📊 Results saved to libraries.json, libraries.md, and libraries.csv`);
+          EOF
+      
+      - name: Upload JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-report-json
+          path: libraries.json
+      
+      - name: Upload Markdown report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-report-markdown
+          path: libraries.md
+      
+      - name: Upload CSV report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-report-csv
+          path: libraries.csv
+      
+      - name: Upload raw SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-raw
+          path: sbom-raw.json
+      
+      - name: Display summary
+        run: |
+          echo "## 📦 Dependency Scan Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the reports from the artifacts section above." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Show first 20 libraries as preview
+          node << 'EOF'
+          const fs = require('fs');
+          const libs = JSON.parse(fs.readFileSync('libraries.json', 'utf8'));
+          
+          console.log(`Total libraries found: **${libs.length}**\n`);
+          console.log('### Preview (first 20):\n');
+          console.log('| Name | Version | File Path |');
+          console.log('|------|---------|-----------|');
+          
+          libs.slice(0, 20).forEach(lib => {
+            console.log(`| ${lib.name} | ${lib.version} | ${lib.filePath} |`);
+          });
+          
+          if (libs.length > 20) {
+            console.log(`\n... and ${libs.length - 20} more`);
+          }
+          EOF

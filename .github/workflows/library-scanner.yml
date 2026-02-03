@@ -15,28 +15,14 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
       
-      - name: Install Dependencies (Node.js)
+      - name: Scan and Generate Custom JSON # Analizza la cartella corrente (.) e ritorna i dati in formato JSON grezzo
         run: |
-          if [ -f package.json ]; then 
-            npm install --package-lock=false --no-audit --no-fund
-          fi
-          # Per Python, se volessi: [ -f requirements.txt ] && pip install -r requirements.txt
-
-      - name: Scan and Generate Custom JSON
-        run: |
-          syft dir:. \
-            --exclude "**/package-lock.json" \
-            --exclude "**/yarn.lock" \
-            --exclude "**/pnpm-lock.yaml" \
-            --exclude "**/poetry.lock" \
-            --exclude "**/Pipfile.lock" \
-            --exclude "**/composer.lock" \
-            -o json | jq '[.artifacts[] | {
-              name: .name,
-              version: .version,
-              type: .type,
-              path: (.locations[0].path // "unknown")
-            }] | sort_by(.path, .name)' > libraries.json
+          syft . -o json | jq '[.artifacts[] | {
+            name: .name,
+            version: .version,
+            type: .type,
+            path: (.locations[0].path // "unknown")
+          }] | sort_by(.path, .name)' > libraries.json
       
       - name: Upload JSON report
         uses: actions/upload-artifact@v4 # Azione standard di GitHub per salvare file

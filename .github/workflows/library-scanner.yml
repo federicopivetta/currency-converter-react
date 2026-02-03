@@ -15,7 +15,14 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
       
-      - name: Scan and Generate Custom JSON # Analizza cartella (.)
+      - name: Install Dependencies (Node.js)
+        run: |
+          if [ -f package.json ]; then 
+            npm install --package-lock=false --no-audit --no-fund
+          fi
+          # Per Python, se volessi: [ -f requirements.txt ] && pip install -r requirements.txt
+
+      - name: Scan and Generate Custom JSON
         run: |
           syft dir:. \
             --exclude "**/package-lock.json" \
@@ -24,7 +31,6 @@ jobs:
             --exclude "**/poetry.lock" \
             --exclude "**/Pipfile.lock" \
             --exclude "**/composer.lock" \
-            --exclude "**/node_modules/**" \
             -o json | jq '[.artifacts[] | {
               name: .name,
               version: .version,

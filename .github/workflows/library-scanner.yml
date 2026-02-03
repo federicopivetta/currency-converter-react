@@ -1,60 +1,31 @@
 name: Library Scanner
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [ main, master ]
+  workflow_dispatch: # Permette di avviare la scansione manualmente (tasto "Run workflow")
 
 jobs:
-  scan-dependencies:
-    runs-on: ubuntu-latest
+  scan-dependencies: # Definisce un gruppo di attività chiamato 'scan-dependencies'
+    runs-on: ubuntu-latest # Usa una macchina virtuale Linux aggiornata fornita da GitHub
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # Scarica il codice del progetto sulla macchina virtuale
       
-      - name: Install Syft
+      - name: Install Syft # Scarica lo script ufficiale di installazione di Syft e lo esegue
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-          syft version
       
-      - name: Scan dependencies
+      - name: Scan and Generate Custom JSON # Analizza la cartella corrente (.) e ritorna i dati in formato JSON grezzo
         run: |
-          syft . -o json > sbom-raw.json
+          syft . -o json | jq '[.artifacts[] | {
+            name: .name,
+            version: .version,
+            type: .type,
+            path: (.locations[0].path // "unknown")
+          }] | sort_by(.path, .name)' > libraries.json
       
-      - name: Setup Node.js for processing
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      
-      - name: Process results into readable format
-        run: |
-          node << 'EOF'
-          const fs = require('fs');
-          
-          const sbom = JSON.parse(fs.readFileSync('sbom-raw.json', 'utf8'));
-          
-          const libraries = sbom.artifacts.map(artifact => ({
-            name: artifact.name,
-            version: artifact.version,
-            package_manager: artifact.type,
-            file_path: artifact.locations?.[0]?.path || 'unknown',
-          }));
-          
-          // Sort by file path then name
-          libraries.sort((a, b) => {
-            if (a.filePath !== b.filePath) {
-              return a.filePath.localeCompare(b.filePath);
-            }
-            return a.name.localeCompare(b.name);
-          });
-          
-          // Save as JSON
-          fs.writeFileSync('libraries.json', JSON.stringify(libraries, null, 2));
-    
       - name: Upload JSON report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4 # Azione standard di GitHub per salvare file
         with:
-          name: dependency-report-json
+          name: dependency-report
           path: libraries.json
-

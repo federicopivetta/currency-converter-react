@@ -15,8 +15,8 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
       
-      - name: Scan and Generate Custom JSON # Analizza la cartella corrente (.) e ritorna i dati in formato JSON grezzo
-         run: |
+      - name: Scan and Generate Custom JSON # Analizza cartella (.)
+        run: |
           syft dir:. \
             --exclude "**/package-lock.json" \
             --exclude "**/yarn.lock" \
@@ -24,12 +24,13 @@ jobs:
             --exclude "**/poetry.lock" \
             --exclude "**/Pipfile.lock" \
             --exclude "**/composer.lock" \
+            --exclude "**/node_modules/**" \
             -o json | jq '[.artifacts[] | {
-            name: .name,
-            version: .version,
-            type: .type,
-            path: (.locations[0].path // "unknown")
-          }] | sort_by(.path, .name)' > libraries.json
+              name: .name,
+              version: .version,
+              type: .type,
+              path: (.locations[0].path // "unknown")
+            }] | sort_by(.path, .name)' > libraries.json
       
       - name: Upload JSON report
         uses: actions/upload-artifact@v4 # Azione standard di GitHub per salvare file

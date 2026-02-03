@@ -16,8 +16,15 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
       
       - name: Scan and Generate Custom JSON # Analizza la cartella corrente (.) e ritorna i dati in formato JSON grezzo
-        run: |
-          syft . -o json | jq '[.artifacts[] | {
+         run: |
+          syft dir:. \
+            --exclude "**/package-lock.json" \
+            --exclude "**/yarn.lock" \
+            --exclude "**/pnpm-lock.yaml" \
+            --exclude "**/poetry.lock" \
+            --exclude "**/Pipfile.lock" \
+            --exclude "**/composer.lock" \
+            -o json | jq '[.artifacts[] | {
             name: .name,
             version: .version,
             type: .type,
